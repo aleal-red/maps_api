@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulación de Rutas con Google Maps</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style id="themeStyles">
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #fff; /* Color de fondo claro por defecto */
+            color: #222; /* Color de texto oscuro por defecto */
+        }
+        body.dark-mode{
+            background-color: #575252; /* Color de fondo oscuro */
+            color: #fff; /* Color de texto claro */
+        }
+        #map {
+            height: 500px;
+            width: 100%;
+        }
+        #controls {
+            margin: 20px 0;
+        }
+        #searchContainer {
+            margin: 20px 0;
+        }
+    </style>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyClczWj8maCHCY_3CZTvS0mxZhpp6lGM-E&callback=initMap" async defer></script>
+    <script>
+        let map;
+        let markers = [];
+        let directionsService;
+        let directionsRenderer;
+        let routeCoordinates = [];
+        let currentStep = 0;
+        let stepDuration = 1000; // Duración del paso en milisegundos (1 segundo inicial)
+        let marker;
+        let interval;
+        let geocoder;
+        let autocomplete;
+        
+        // Objeto para mapear los modos de transporte a sus íconos respectivos
+        const travelModeIcons = {
+            'DRIVING': 'https://maps.google.com/mapfiles/kml/shapes/cabs.png', // Icono de carro para conducir
+            'WALKING': 'https://cdn-icons-png.flaticon.com/512/10/10624.png', // Icono de caminante para caminar
+            'BICYCLING': 'https://maps.google.com/mapfiles/ms/micons/cycling.png', // Icono de bicicleta para bicicleta
+            'TRANSIT': 'https://maps.google.com/mapfiles/ms/micons/bus.png' // Icono de autobús para tránsito público
+        };
+        
+        function initMap() {
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer();
+            geocoder = new google.maps.Geocoder();
+        
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: { lat: 19.4326, lng: -99.1332 }, // Ciudad de México
+                zoom: 10
+            });
+        
+            directionsRenderer.setMap(map);
+        
+            map.addListener('click', (event) => {
+                addMarker(event.latLng);
+            });
+        
+            // Verificar si google.maps.places está disponible
+            if (typeof google.maps.places !== 'undefined') {
+                // Inicialización del autocompletado mejorado
+                autocomplete = new google.maps.places.Autocomplete(
+                    document.getElementById('address'), { types: ['geocode'] });
+        
+                autocomplete.addListener('place_changed', onPlaceChanged);
+            } else {
+                console.error('La API de Google Places no está disponible.');
+            }
+        
+            document.getElementById('simulateButton').addEventListener('click', simulateRoute);
+            document.getElementById('clearButton').addEventListener('click', clearRoute);
+            document.getElementById('searchButton').addEventListener('click', () => {
+                geocodeAddress(document.getElementById('address').value);
+            });
+        
+            // Integración de opciones avanzadas de ruta
+            document.getElementById('travelMode').addEventListener('change', () => {
+                calculateAndDisplayRoute();
+            });
+        
+            // Botón para cambiar el tema
+            document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+        }
+        
+        function addMarker(location) {
+            const travelMode = document.getElementById('travelMode').value;
+        
+            const marker = new google.maps.Marker({
+                position: location,
+                map: map,
+                icon: {
+                    url: travelModeIcons[travelMode], // Seleccionar el ícono basado en el modo de transporte
+                    scaledSize: new google.maps.Size(32, 32)
+                }
+            });
+        
+            markers.push(marker);
+            routeCoordinates.push(location);
+        
+            if (routeCoordinates.length > 1) {
+                calculateAndDisplayRoute();
+            }
+        }
+        
+        function calculateAndDisplayRoute() {
+            const waypoints = routeCoordinates.slice(1, -1).map(coord => ({ location: coord, stopover: true }));
+            const travelMode = document.getElementById('travelMode').value;
+        
+            console.log('Modo de transporte seleccionado:', travelMode); // Verifica el valor de travelMode en la consola
+        
+            directionsService.route({
+                origin: routeCoordinates[0],
+                destination: routeCoordinates[routeCoordinates.length - 1],
+                waypoints: waypoints,
+                // optimizeWaypoints: true, // Comenta o elimina esta línea para desactivar la optimización de waypoints
+                travelMode: travelMode // Asegúrate de que travelMode sea una cadena válida ('DRIVING', 'WALKING', 'BICYCLING', 'TRANSIT')
+            }, (response, status) => {
+                if (status === 'OK') {
+                    directionsRenderer.setDirections(response);
+                    routeCoordinates = response.routes[0].overview_path;
+                } else {
+                    window.alert('No se pudo calcular la ruta debido a: ' + status);
+                }
+            });
+        }
+        
+        function simulateRoute() {
+            if (routeCoordinates.length < 2) {
+                window.alert('Debe marcar al menos dos puntos en el mapa.');
+                return;n
+            }
+        
+            if (interval) {
+                clearInterval(interval);
+            }
+        
+            currentStep = 0;
+        
+            if (marker) {
+                marker.setMap(null);
+            }
+        
+            const travelMode = document.getElementById('travelMode').value;
+        
+            marker = new google.maps.Marker({
+                position: routeCoordinates[0],
+                map: map,
+                icon: {
+                    url: travelModeIcons[travelMode], // Seleccionar el ícono basado en el modo de transporte
+                    scaledSize: new google.maps.Size(32, 32)
+                }
+            });
+        
+            interval = setInterval(moveMarker, stepDuration);
+        }
+        
+        function moveMarker() {
+            if (currentStep < routeCoordinates.length) {
+                marker.setPosition(routeCoordinates[currentStep]);
+                map.panTo(routeCoordinates[currentStep]);
+                currentStep++;
+            } else {
+                clearInterval(interval);
+            }
+        }
+        
+        function clearRoute() {
+            routeCoordinates = [];
+            markers.forEach(marker => marker.setMap(null));
+            markers = [];
+            directionsRenderer.setDirections({ routes: [] });
+            if (marker) {
+                marker.setMap(null);
+            }
+            clearInterval(interval);
+        }
+        
+        function geocodeAddress(address) {
+            geocoder.geocode({ 'address': address }, (results, status) => {
+                if (status === 'OK') {
+                    map.setCenter(results[0].geometry.location);
+                    const travelMode = document.getElementById('travelMode').value;
+        
+                    const marker = new google.maps.Marker({
+                        map: map,
+                        position: results[0].geometry.location,
+                        icon: {
+                            url: travelModeIcons[travelMode], // Seleccionar el ícono basado en el modo de transporte
+                            scaledSize: new google.maps.Size(32, 32)
+                        }
+                    });
+        
+                    markers.push(marker);
+                    routeCoordinates.push(results[0].geometry.location);
+                    calculateAndDisplayRoute(); // Calcular la ruta al agregar un marcador desde la búsqueda
+                } else {
+                    alert('No se pudo encontrar la dirección debido a: ' + status);
+                }
+            });
+        }
+        
+        function onPlaceChanged() {
+            const place = autocomplete.getPlace();
+            if (!place.geometry) {
+                window.alert("No se encontraron detalles de la ubicación: " + place.name);
+                return;
+            }
+        
+            // Si se encontró una geometría, centrar el mapa en la ubicación seleccionada
+            map.panTo(place.geometry.location);
+            map.setZoom(15);
+        
+            // Añadir marcador y calcular la ruta
+            addMarker(place.geometry.location);
+        }
+        
+        function toggleTheme() {
+            const body = document.body;
+            body.classList.toggle('dark-mode');
+        }
+        
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+        
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div id="searchContainer" class="my-4">
+            <input type="text" id="address" class="form-control" placeholder="Ingresa una dirección">
+            <button id="searchButton" class="btn btn-primary mt-2">Buscar</button>
+        </div>
+        <h4>Selecciona un tipo de transporte</h4>
+        <div id="controls" class="mb-4">
+            <select id="travelMode" class="form-select mb-2">
+                <option value="DRIVING">Conducir</option>
+                <option value="WALKING">Caminar</option>
+                <option value="BICYCLING">Bicicleta</option>
+                <option value="TRANSIT">Tránsito Público</option>
+            </select>
+            <button id="simulateButton" class="btn btn-success">Simular Ruta</button>
+            <button id="clearButton" class="btn btn-danger ms-2">Limpiar Ruta</button>
+            <button id="themeToggle" class="btn btn-secondary ms-2">Cambiar Tema</button>
+        </div>
+        <div id="map"></div>
+    </div>
+    <br>
+</body>
+</html>

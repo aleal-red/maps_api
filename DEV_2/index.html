@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simulación de Rutas con Google Maps</title>
+    <style>
+        #map {
+            height: 500px;
+            width: 100%;
+        }
+        body {
+            font-family: Arial, sans-serif;
+        }
+        #controls {
+            margin: 20px 0;
+        }
+    </style>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyClczWj8maCHCY_3CZTvS0mxZhpp6lGM-E&callback=initMap" async defer></script>
+    <script>
+        let map;
+        let markers = [];
+        let directionsService;
+        let directionsRenderer;
+        let routeCoordinates = [];
+        let currentStep = 0;
+        let stepDuration = 500; // Ajusta la duración del paso a 0.5 segundos para mayor rapidez
+        let marker;
+        let interval;
+
+        function initMap() {
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer();
+
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: { lat: 37.7749, lng: -122.4194 }, // San Francisco
+                zoom: 10
+            });
+
+            directionsRenderer.setMap(map);
+
+            map.addListener('click', (event) => {
+                addMarker(event.latLng);
+            });
+
+            document.getElementById('simulateButton').addEventListener('click', simulateRoute);
+            document.getElementById('clearButton').addEventListener('click', clearRoute);
+        }
+
+        function addMarker(location) {
+            const marker = new google.maps.Marker({
+                position: location,
+                map: map,
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 10,
+                    fillColor: getRandomColor(),
+                    fillOpacity: 1,
+                    strokeColor: 'white',
+                    strokeWeight: 2
+                }
+            });
+            markers.push(marker);
+            routeCoordinates.push(location);
+
+            if (routeCoordinates.length > 1) {
+                calculateAndDisplayRoute();
+            }
+        }
+
+        function calculateAndDisplayRoute() {
+            const waypoints = routeCoordinates.slice(1, -1).map(coord => ({ location: coord, stopover: true }));
+
+            directionsService.route({
+                origin: routeCoordinates[0],
+                destination: routeCoordinates[routeCoordinates.length - 1],
+                waypoints: waypoints,
+                optimizeWaypoints: true,
+                travelMode: google.maps.TravelMode.DRIVING
+            }, (response, status) => {
+                if (status === google.maps.DirectionsStatus.OK) {
+                    directionsRenderer.setDirections(response);
+                    routeCoordinates = response.routes[0].overview_path;
+                } else {
+                    window.alert('No se pudo calcular la ruta debido a: ' + status);
+                }
+            });
+        }
+
+        function simulateRoute() {
+            if (routeCoordinates.length < 2) {
+                window.alert('Debe marcar al menos dos puntos en el mapa.');
+                return;
+            }
+
+            if (interval) {
+                clearInterval(interval);
+            }
+
+            currentStep = 0;
+
+            if (marker) {
+                marker.setMap(null);
+            }
+
+            marker = new google.maps.Marker({
+                position: routeCoordinates[0],
+                map: map,
+                icon: {
+                    url: 'https://maps.google.com/mapfiles/kml/shapes/cabs.png',
+                    scaledSize: new google.maps.Size(32, 32)
+                }
+            });
+
+            interval = setInterval(moveMarker, stepDuration);
+        }
+
+        function moveMarker() {
+            if (currentStep < routeCoordinates.length) {
+                marker.setPosition(routeCoordinates[currentStep]);
+                map.panTo(routeCoordinates[currentStep]);
+                currentStep++;
+            } else {
+                clearInterval(interval);
+            }
+        }
+
+        function clearRoute() {
+            routeCoordinates = [];
+            markers.forEach(marker => marker.setMap(null));
+            markers = [];
+            directionsRenderer.setDirections({ routes: [] });
+            if (marker) {
+                marker.setMap(null);
+            }
+            clearInterval(interval);
+        }
+
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+    </script>
+</head>
+<body>
+    <div id="controls">
+        <button id="simulateButton">Simular Ruta</button>
+        <button id="clearButton">Limpiar Ruta</button>
+    </div>
+    <div id="map"></div>
+</body>
+</html>
